@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-mongoose.connect('mongodb://localhost:27017/SecondBrain');
 
 const UserSchema = new mongoose.Schema({
     email:{type:String, required:true,unique:true},

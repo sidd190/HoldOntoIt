@@ -1,83 +1,58 @@
-import express from 'express'
+import express, { Request, Response } from 'express'
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
-import {User} from './model/user';
+const {User} = require('dimsee');
 import { Content } from './model/content';
-import { authMiddleware } from './middleware';
+const {authMiddleware} = require('dimsee/backend');
 import { Link } from './model/link';
 import { random } from './utils';
+const { createAuthBackend } = require('dimsee/backend');
 
-const app = express();
+if (!mongoose.models.User) {
+    mongoose.models.User = User;
+}
+
+const app = createAuthBackend({
+    mongoUri:"mongodb://localhost:27017/SecondBrain",
+    jwtSecret:"JigglyJiggly",
+    jwtExpiry: '15m'
+});
+
 app.use(express.json());
 
-const JWT_SECRET = "JigglyJiggly";
+interface CustomRequest extends Request {
+    user?: { userId: string };
+}
 
-app.post('/api/v1/signup',async (req,res)=>{
-    const username = req.body.username;
-    const password = req.body.password;
-    const email = req.body.email;
-    try {
-        await User.create({
-            username,
-            password,
-            email
-        });
-        res.json({messsage:"User signed up."})
-    } catch (error) {
-        res.status(401).json({message:"User already exists."})
-    }
-})
-
-app.post('/api/v1/signin',async (req,res)=>{
-    const username = req.body.username;
-    const password = req.body.password;
-    const existingUser = await User.findOne({
-        username,
-        password
-    });
-    if(existingUser){
-        const token = jwt.sign({
-            id:existingUser._id,
-        },JWT_SECRET);
-        res.json({
-            token
-        })
-    }
-    else{
-        res.status(403).json({message:"Incorrect Credentials"});
-    }
-})
-
-app.post('/api/v1/content',authMiddleware,async (req,res)=>{
-    const {link,type,title,tag} = req.body;
+app.post('/api/v1/content', authMiddleware, async (req: CustomRequest, res: Response) => {
+    const { link, type, title, tag } = req.body;
     try {
         await Content.create({
             link,
             type,
             title,
-            //@ts-ignore
-            userId:req.userId,
-            tag:[],
-        })
-        res.json({message:"Added"});
+            userId: req.user?.userId,
+            tag: tag || [],
+        }); 
+        res.json({ message: "Added" });
     } catch (error) {
-        res.status(403).json({message:"Error" + error});
+        console.log(error);
+        res.status(401).json({ message: "Error occurred" + error });
     }
-})
+});
 
-app.get('/api/v1/content',authMiddleware,async (req,res)=>{
-    //@ts-ignore
-    const userId = req.userId;
+app.get('/api/v1/content', authMiddleware, async (req: CustomRequest, res: Response) => {
+    const userId = (req.user?.userId);
     try {
-        const content = await Content.find({userId:userId}).populate("userId","username");
-        res.json({content})
+        const content = await Content.find({userId});
+        res.json({ content });
     } catch (error) {
-        res.status(404).json({message:"Content not found!"});
-        console.log("Error in getContent controller : "+error);
+        //@ts-ignore
+        res.status(404).json({ message: "Content not found!", error: error.message });
     }
-})
+});
 
-app.delete('/api/v1/content',authMiddleware,async (req,res)=>{
+app.delete('/api/v1/content',authMiddleware,async (req: Request, res: Response)=>{
     const contentId = req.body.contentId;
     await Content.deleteMany({
         contentId,
@@ -86,13 +61,13 @@ app.delete('/api/v1/content',authMiddleware,async (req,res)=>{
     })
 })
 
-app.post('/api/v1/brain/share',authMiddleware,async (req,res)=>{
+app.post('/api/v1/brain/share',authMiddleware,async (req: Request, res: Response)=>{
     const share= req.body.share;
     const hash = random(10);
     if(share){
         const exisitingLink = await Link.findOne({
             //@ts-ignore
-            userId:req.userId
+            userId:req.user.userId,
         });
         if(exisitingLink){
             res.json({
@@ -101,7 +76,7 @@ app.post('/api/v1/brain/share',authMiddleware,async (req,res)=>{
         }
         await Link.create({
             //@ts-ignore
-            userId:req.userId,
+            userId:req.user.userId,
             hash
         })
         res.json({
@@ -111,7 +86,7 @@ app.post('/api/v1/brain/share',authMiddleware,async (req,res)=>{
     else{
         await Link.deleteOne({
             //@ts-ignore
-            userId:req.userId
+            userId:req.user.userId
         });
         res.json({
             message:"Removed Link"
@@ -119,7 +94,7 @@ app.post('/api/v1/brain/share',authMiddleware,async (req,res)=>{
     }
 })
 
-app.get('/api/v1/brain/:shareLink',async (req,res)=>{
+app.get('/api/v1/brain/:shareLink',async (req: Request, res: Response)=>{
     const hash = req.params.shareLink;
 
     const link = await Link.findOne({

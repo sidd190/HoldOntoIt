@@ -1,8 +1,14 @@
-
+import React from 'react'
+import Dashboard from './pages/Dashboard'
+import {AuthProvider,AuthStatus} from 'dimsee/frontend'
 
 function App() {
   return (
-    <div className="bg-red-500">App</div>
+    <AuthProvider>
+      <AuthStatus formDesign="colorful">
+        <Dashboard/>
+      </AuthStatus>
+    </AuthProvider>
   )
 }
 

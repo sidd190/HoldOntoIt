@@ -13,80 +13,53 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const user_1 = require("./model/user");
+const mongoose_1 = __importDefault(require("mongoose"));
+const { User } = require('dimsee');
 const content_1 = require("./model/content");
-const middleware_1 = require("./middleware");
+const { authMiddleware } = require('dimsee/backend');
 const link_1 = require("./model/link");
 const utils_1 = require("./utils");
-const app = (0, express_1.default)();
+const { createAuthBackend } = require('dimsee/backend');
+if (!mongoose_1.default.models.User) {
+    mongoose_1.default.models.User = User;
+}
+const app = createAuthBackend({
+    mongoUri: "mongodb://localhost:27017/SecondBrain",
+    jwtSecret: "JigglyJiggly",
+    jwtExpiry: '15m'
+});
 app.use(express_1.default.json());
-const JWT_SECRET = "JigglyJiggly";
-app.post('/api/v1/signup', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const username = req.body.username;
-    const password = req.body.password;
-    const email = req.body.email;
-    try {
-        yield user_1.User.create({
-            username,
-            password,
-            email
-        });
-        res.json({ messsage: "User signed up." });
-    }
-    catch (error) {
-        res.status(401).json({ message: "User already exists." });
-    }
-}));
-app.post('/api/v1/signin', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const username = req.body.username;
-    const password = req.body.password;
-    const existingUser = yield user_1.User.findOne({
-        username,
-        password
-    });
-    if (existingUser) {
-        const token = jsonwebtoken_1.default.sign({
-            id: existingUser._id,
-        }, JWT_SECRET);
-        res.json({
-            token
-        });
-    }
-    else {
-        res.status(403).json({ message: "Incorrect Credentials" });
-    }
-}));
-app.post('/api/v1/content', middleware_1.authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post('/api/v1/content', authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     const { link, type, title, tag } = req.body;
     try {
         yield content_1.Content.create({
             link,
             type,
             title,
-            //@ts-ignore
-            userId: req.userId,
-            tag: [],
+            userId: (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId,
+            tag: tag || [],
         });
         res.json({ message: "Added" });
     }
     catch (error) {
-        res.status(403).json({ message: "Error" + error });
+        console.log(error);
+        res.status(401).json({ message: "Error occurred" + error });
     }
 }));
-app.get('/api/v1/content', middleware_1.authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    //@ts-ignore
-    const userId = req.userId;
+app.get('/api/v1/content', authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.userId);
     try {
-        const content = yield content_1.Content.find({ userId: userId }).populate("userId", "username");
+        const content = yield content_1.Content.find({ userId });
         res.json({ content });
     }
     catch (error) {
-        res.status(404).json({ message: "Content not found!" });
-        console.log("Error in getContent controller : " + error);
+        //@ts-ignore
+        res.status(404).json({ message: "Content not found!", error: error.message });
     }
 }));
-app.delete('/api/v1/content', middleware_1.authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.delete('/api/v1/content', authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const contentId = req.body.contentId;
     yield content_1.Content.deleteMany({
         contentId,
@@ -94,13 +67,13 @@ app.delete('/api/v1/content', middleware_1.authMiddleware, (req, res) => __await
         userId: req.userId
     });
 }));
-app.post('/api/v1/brain/share', middleware_1.authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post('/api/v1/brain/share', authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const share = req.body.share;
     const hash = (0, utils_1.random)(10);
     if (share) {
         const exisitingLink = yield link_1.Link.findOne({
             //@ts-ignore
-            userId: req.userId
+            userId: req.user.userId,
         });
         if (exisitingLink) {
             res.json({
@@ -109,7 +82,7 @@ app.post('/api/v1/brain/share', middleware_1.authMiddleware, (req, res) => __awa
         }
         yield link_1.Link.create({
             //@ts-ignore
-            userId: req.userId,
+            userId: req.user.userId,
             hash
         });
         res.json({
@@ -119,7 +92,7 @@ app.post('/api/v1/brain/share', middleware_1.authMiddleware, (req, res) => __awa
     else {
         yield link_1.Link.deleteOne({
             //@ts-ignore
-            userId: req.userId
+            userId: req.user.userId
         });
         res.json({
             message: "Removed Link"
@@ -138,7 +111,7 @@ app.get('/api/v1/brain/:shareLink', (req, res) => __awaiter(void 0, void 0, void
     const content = yield content_1.Content.find({
         userId: link.userId
     });
-    const user = yield user_1.User.find({
+    const user = yield User.find({
         _id: link.userId
     });
     if (!user) {
